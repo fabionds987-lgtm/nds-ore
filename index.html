@@ -66,6 +66,12 @@
   .msg{margin-top:14px;padding:13px 14px;border-radius:11px;font-size:14px;display:none}
   .msg.ok{display:block;background:#12402c;border:1px solid #25a06a;color:#8ff0c0}
   .msg.err{display:block;background:#4a1e22;border:1px solid #c0392b;color:#ffb3ba}
+  .msg.wait{display:block;background:#3a2f14;border:1px solid #c9a96b;color:#f3dcab}
+  .obx{display:none;margin-top:14px;padding:12px 14px;border-radius:11px;background:#1b2b47;border:1px solid #3d5378}
+  .obxt{font-size:14px;font-weight:700;color:#ffd79a;margin-bottom:7px}
+  .obxr{font-size:12.5px;color:#c3cfe0;line-height:1.55}
+  .obxb{margin-top:11px;width:100%;padding:11px;border:0;border-radius:10px;background:#2f6fd0;color:#fff;font-size:14px;font-weight:600;cursor:pointer}
+  .obxb:disabled{background:#3a4b63;color:#8ea4c4}
   .hint{font-size:12px;color:#7f93b0;margin-top:6px;line-height:1.4}
   .foot{text-align:center;color:#5f7295;font-size:11px;margin-top:22px}
 </style>
@@ -193,6 +199,7 @@
 
     <button class="send" id="send" onclick="invia()">Invia ore</button>
     <div class="msg" id="msg"></div>
+    <div class="obx" id="obx"></div>
     <div class="hint">Le ore inviate arrivano in ufficio per la conferma. Se sbagli, avvisa l'ufficio.</div>
   </div>
 
@@ -317,7 +324,7 @@ if(ambitiEl){ ambitiEl.addEventListener('click',function(e){
   bollaMode();
 }); }
 
-function show(t,ok){var m=g('msg');m.textContent=t;m.className='msg '+(ok?'ok':'err');}
+function show(t,ok){var m=g('msg');m.textContent=t;m.className='msg '+(ok==='wait'?'wait':(ok?'ok':'err'));}
 
 // mostra i km solo se è stato scelto un mezzo
 g('mezzo').addEventListener('change',function(){
@@ -415,17 +422,93 @@ operaiRender();
 var modiEl=g('modi'); if(modiEl){ modiEl.addEventListener('click',function(e){ var el=e.target.closest('.modo'); if(!el)return; MODO=el.getAttribute('data-m'); [].forEach.call(modiEl.querySelectorAll('.modo'),function(x){x.classList.toggle('on',x===el);}); bollaMode(); }); }
 bollaMode();
 
+// ---- Coda invii in attesa di rete (invio differito) ----
+var OBX_KEY='nds_ore_outbox';
+function obxEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function obxLoad(){ try{ var v=JSON.parse(localStorage.getItem(OBX_KEY)||'[]'); return (v&&typeof v.length==='number')?v:[]; }catch(e){ return []; } }
+function obxSave(q){ localStorage.setItem(OBX_KEY,JSON.stringify(q)); }
+function obxLabel(b){
+  var d2=b.data?String(b.data).split('-').reverse().join('/'):'';
+  var chi=b.commessa||b.cliente_pv||'';
+  if(b.tipo==='DDT/Foto') return 'Foto '+(b.foto_tipo==='Bolla'?'bolla/DDT':'da archiviare')+(chi?' · '+chi:'')+(d2?' del '+d2:'');
+  return (b.nome||'')+' — '+(b.ore||0)+'h '+(b.tipo||'')+(chi?' · '+chi:'')+(d2?' del '+d2:'');
+}
+function obxAdd(body){
+  var q=obxLoad();
+  q.push({id:String(Date.now())+'-'+Math.round(Math.random()*1e6),body:body,label:obxLabel(body),ts:Date.now()});
+  obxSave(q); obxRender();
+}
+function obxRender(){
+  var el=g('obx'); if(!el) return;
+  var q=obxLoad();
+  if(!q.length){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display='block';
+  var righe='';
+  q.forEach(function(it){ righe+='<div class="obxr">• '+obxEsc(it.label)+'</div>'; });
+  el.innerHTML='<div class="obxt">📥 '+q.length+' invi'+(q.length===1?'o':'i')+' in attesa di rete</div>'+righe+
+    '<button type="button" class="obxb" id="obxb" onclick="obxFlush(true)">Prova a inviare ora</button>';
+}
+var _obxBusy=false;
+function obxFlush(manuale){
+  if(_obxBusy) return;
+  var q=obxLoad(); if(!q.length) return;
+  if(!navigator.onLine){ if(manuale) show('Ancora nessuna connessione. Gli invii restano salvati sul telefono.',false); return; }
+  _obxBusy=true;
+  var bb=g('obxb'); if(bb){ bb.disabled=true; bb.textContent='Invio in corso…'; }
+  var inviati=0, scartati=0;
+  function togli(id){ var cur=obxLoad(); obxSave(cur.filter(function(x){ return x.id!==id; })); }
+  function next(){
+    var cur=obxLoad();
+    if(!cur.length){ fine(); return; }
+    var it=cur[0];
+    fetch(SUPA_URL+'/rest/v1/ore_inbox',{method:'POST',headers:Object.assign({'Prefer':'return=minimal'},H),body:JSON.stringify(it.body)})
+      .then(function(r){
+        if(r.ok){ togli(it.id); inviati++; obxRender(); next(); }
+        else if(r.status>=400 && r.status<500){ togli(it.id); scartati++; obxRender(); next(); }
+        else { fine(); }
+      })
+      .catch(function(){ fine(); });
+  }
+  function fine(){
+    _obxBusy=false; obxRender();
+    if(scartati>0) show('Attenzione: '+scartati+' invi'+(scartati===1?'o è stato rifiutato':'i sono stati rifiutati')+' dal server. Rifalli a mano o avvisa l\'ufficio.',false);
+    else if(inviati>0) show('✓ '+inviati+' invi'+(inviati===1?'o inviato':'i inviati')+' dalla coda.',true);
+    else if(manuale) show('Non riesco ancora a inviare. Gli invii restano salvati sul telefono.',false);
+  }
+  next();
+}
+window.obxFlush=obxFlush;
+function obxAccoda(body,resetFn,lbl){
+  var btn=g('send');
+  try{ obxAdd(body); }
+  catch(e){
+    show('Memoria del telefono piena: ci sono già troppi invii in attesa. Avvicinati a una zona con campo e premi "Prova a inviare ora".',false);
+    btn.disabled=false; btn.textContent=lbl; return;
+  }
+  show('📥 Nessuna rete: salvato sul telefono. Parte da solo appena torna il campo.','wait');
+  resetFn();
+  btn.classList.add('done'); btn.textContent='Salvato — in attesa di rete';
+  setTimeout(function(){ btn.classList.remove('done'); btn.disabled=false; btn.textContent=sendLabel(); },4500);
+}
+window.addEventListener('online',function(){ obxFlush(false); });
+document.addEventListener('visibilitychange',function(){ if(!document.hidden) obxFlush(false); });
+setInterval(function(){ obxFlush(false); },60000);
+obxRender(); obxFlush(false);
+
 function doPost(body,okMsg,resetFn){
   var btn=g('send'); btn.disabled=true; btn.classList.remove('done'); btn.textContent='Invio…';
   var lbl=sendLabel();
+  if(!navigator.onLine){ obxAccoda(body,resetFn,lbl); return; }
   fetch(SUPA_URL+'/rest/v1/ore_inbox',{method:'POST',headers:Object.assign({'Prefer':'return=minimal'},H),body:JSON.stringify(body)})
     .then(function(r){
       if(r.ok){ show(okMsg,true); resetFn();
         btn.classList.add('done'); btn.textContent='Invio effettuato';
         setTimeout(function(){ btn.classList.remove('done'); btn.disabled=false; btn.textContent=sendLabel(); },5000);
-      } else { r.text().then(function(t){show('Errore invio ('+r.status+'). Riprova o avvisa l\'ufficio.',false);}); btn.disabled=false; btn.textContent=lbl; }
+        obxFlush(false);
+      } else if(r.status>=500){ obxAccoda(body,resetFn,lbl); }
+      else { r.text().then(function(t){show('Errore invio ('+r.status+'). Riprova o avvisa l\'ufficio.',false);}); btn.disabled=false; btn.textContent=lbl; }
     })
-    .catch(function(){show('Nessuna connessione. Controlla la rete e riprova.',false); btn.disabled=false; btn.textContent=lbl;});
+    .catch(function(){ obxAccoda(body,resetFn,lbl); });
 }
 function invia(){
   var data=g('data').value;
@@ -488,6 +571,7 @@ function invia(){
   doPost(body,okLbl,
     function(){ g('ore').value=''; g('mezzo').value=''; g('kmpart').value=''; g('kmarr').value=''; g('nota').value=''; g('attivita').value=''; firmaClear(); fotoDel(); g('kmWrap').style.display='none'; });
 }
+if('serviceWorker' in navigator){ window.addEventListener('load',function(){ try{ navigator.serviceWorker.register('sw.js'); }catch(e){} }); }
 </script>
 </body>
 </html>
