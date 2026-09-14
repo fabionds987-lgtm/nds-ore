@@ -1,5 +1,5 @@
 /* NDS Ore — service worker: l'app si apre anche senza rete */
-var CACHE = 'nds-ore-v1';
+var CACHE='nds-ore-v3';  /* v3: book fotografico, piu' foto per invio */
 
 self.addEventListener('install', function (e) {
   e.waitUntil(
