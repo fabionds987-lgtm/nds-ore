@@ -71,6 +71,12 @@
   button.send:disabled{background:#3a4b63;color:#8ea4c4}
   button.send.done,button.send.done:disabled{background:#f2c200;color:#3a2e00}
   .msg{margin-top:14px;padding:13px 14px;border-radius:11px;font-size:14px;display:none}
+  #condividi{margin-top:12px;padding:14px;border-radius:13px;background:#0f2a1c;border:1px solid #1f6b46}
+  .condivt{font-size:13px;color:#8fe3b4;margin-bottom:9px;font-weight:600}
+  .condivbtn{display:block;width:100%;background:#25d366;border:none;color:#06261a;font-size:16px;font-weight:700;
+             padding:15px 12px;border-radius:12px;cursor:pointer}
+  .condivbtn:active{background:#1fb356}
+  .condivhint{font-size:12px;color:#9ab;line-height:1.45;margin-top:9px}
   .msg.ok{display:block;background:#12402c;border:1px solid #25a06a;color:#8ff0c0}
   .msg.err{display:block;background:#4a1e22;border:1px solid #c0392b;color:#ffb3ba}
   .msg.wait{display:block;background:#3a2f14;border:1px solid #c9a96b;color:#f3dcab}
@@ -206,6 +212,7 @@
 
     <button class="send" id="send" onclick="invia()">Invia ore</button>
     <div class="msg" id="msg"></div>
+    <div id="condividi" style="display:none"></div>
     <div class="obx" id="obx"></div>
     <div class="hint">Le ore inviate arrivano in ufficio per la conferma. Se sbagli, avvisa l'ufficio.</div>
   </div>
@@ -331,7 +338,10 @@ if(ambitiEl){ ambitiEl.addEventListener('click',function(e){
   bollaMode();
 }); }
 
-function show(t,ok){var m=g('msg');m.textContent=t;m.className='msg '+(ok==='wait'?'wait':(ok?'ok':'err'));}
+function show(t,ok){var m=g('msg');m.textContent=t;m.className='msg '+(ok==='wait'?'wait':(ok?'ok':'err'));
+  /* un errore o un'attesa cancellano un rapporto pronto di prima:
+     non deve restare li' a far inviare una cosa vecchia */
+  if(ok!==true){ try{ condividiNascondi(); }catch(e){} } }
 
 // mostra i km solo se è stato scelto un mezzo
 g('mezzo').addEventListener('change',function(){
@@ -550,13 +560,95 @@ document.addEventListener('visibilitychange',function(){ if(!document.hidden) ob
 setInterval(function(){ obxFlush(false); },60000);
 obxRender(); obxFlush(false);
 
+// ---- Condivisione del rapporto sul gruppo WhatsApp ----------------------
+// WhatsApp non lascia scrivere nei gruppi da un programma: qui si apre il
+// foglio di condivisione del telefono, il tecnico sceglie il gruppo e parte
+// tutto insieme, testo e foto. Il messaggio lo scrive il programma.
+var CONDIV=null;   // {testo, files:[File]}
+function dataURLtoFile(u,nome){
+  try{
+    var p=String(u).split(','), m=/:(.*?);/.exec(p[0]);
+    var bin=atob(p[1]), n=bin.length, arr=new Uint8Array(n);
+    while(n--) arr[n]=bin.charCodeAt(n);
+    return new File([arr],nome,{type:(m&&m[1])||'image/jpeg'});
+  }catch(e){ return null; }
+}
+function dmyIt(s){ s=String(s||''); var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  return m?(m[3]+'/'+m[2]+'/'+m[1]):s; }
+function commLabel(code){
+  if(!code) return '';
+  for(var i=0;i<COMM_ALL.length;i++) if(COMM_ALL[i].code===code){
+    var c=COMM_ALL[i];
+    return c.code+(c.cliente?(' \u2014 '+c.cliente):(c.titolo?(' \u2014 '+c.titolo):'')); }
+  return code;
+}
+/* Il rapporto, scritto sempre allo stesso modo. E' quello che prima il
+   tecnico scriveva a mano nel gruppo, ogni volta diverso. */
+function rapportoTesto(b,nFoto){
+  var L=[];
+  L.push('\ud83c\udfd7\ufe0f *NDS GROUP \u2014 Rapporto di cantiere*');
+  var cm=commLabel(b.commessa);
+  if(cm) L.push('*Cantiere:* '+cm);
+  if(b.data) L.push('*Data:* '+dmyIt(b.data));
+  var chi=b.operai||b.nome; if(chi) L.push('*Tecnici:* '+chi);
+  if(b.tipo && b.tipo!=='DDT/Foto' && b.tipo!=='Bolla' && b.tipo!=='Ordinario') L.push('*Tipo:* '+b.tipo);
+  if(b.ore) L.push('*Ore:* '+String(b.ore).replace('.',','));
+  if(b.attivita) L.push('*Attivit\u00e0:* '+b.attivita);
+  var mz=[]; if(b.mezzo) mz.push(b.mezzo);
+  if(b.km_part!=null&&b.km_part!==''&&b.km_arr!=null&&b.km_arr!=='')
+    mz.push(b.km_part+'\u2192'+b.km_arr+' ('+(Number(b.km_arr)-Number(b.km_part))+' km)');
+  if(mz.length) L.push('*Mezzo:* '+mz.join(' \u00b7 '));
+  if(b.nota) L.push('*Note:* '+b.nota);
+  if(nFoto) L.push('\ud83d\udcf7 '+nFoto+(nFoto===1?' foto allegata':' foto allegate'));
+  return L.join('\n');
+}
+/* Prepara la condivisione. Le foto vanno prese PRIMA che il modulo si
+   svuoti, altrimenti si perdono. */
+function condividiPrepara(b,fotos){
+  var files=[];
+  (fotos||[]).forEach(function(f,i){
+    var fl=dataURLtoFile(f.d,'cantiere-'+(b.data||today())+'-'+(i+1)+'.jpg');
+    if(fl) files.push(fl); });
+  CONDIV={testo:rapportoTesto(b,files.length),files:files};
+  var el=g('condividi'); if(!el) return;
+  var puo=false;
+  try{ puo=!!(navigator.share && (!files.length || (navigator.canShare && navigator.canShare({files:files})))); }catch(e){ puo=false; }
+  el.style.display='block';
+  el.innerHTML='<div class="condivt">Il rapporto \u00e8 pronto per il gruppo</div>'+
+    '<button type="button" class="condivbtn" onclick="condividiOra()">\ud83d\udce4 Invia sul gruppo WhatsApp'+
+      (files.length?(' ('+files.length+(files.length===1?' foto)':' foto)')):'')+'</button>'+
+    '<div class="condivhint">'+(puo
+      ? 'Si apre la condivisione del telefono: scegli <b>WhatsApp</b> e poi il gruppo. Testo e foto partono insieme.'
+      : 'Su questo telefono le foto non si allegano da sole: parte il testo, le foto le aggiungi dalla galleria.')+'</div>';
+}
+function condividiNascondi(){ var el=g('condividi'); if(el){ el.style.display='none'; el.innerHTML=''; } CONDIV=null; }
+function condividiOra(){
+  if(!CONDIV) return;
+  var dati={title:'Rapporto di cantiere NDS',text:CONDIV.testo};
+  var conFile=false;
+  try{ if(CONDIV.files.length && navigator.canShare && navigator.canShare({files:CONDIV.files})){ dati.files=CONDIV.files; conFile=true; } }catch(e){}
+  if(navigator.share){
+    navigator.share(dati).then(function(){
+      if(!conFile && CONDIV.files.length) show('Testo inviato. Le foto aggiungile dalla galleria: sono gi\u00e0 salvate nel telefono.',true);
+    }).catch(function(){ /* annullato dal tecnico: nessun errore da mostrare */ });
+    return;
+  }
+  // niente condivisione di sistema: si apre WhatsApp col testo gia' scritto
+  try{ window.open('https://wa.me/?text='+encodeURIComponent(CONDIV.testo),'_blank'); }
+  catch(e){ show('Copia il testo a mano: la condivisione non \u00e8 disponibile su questo telefono.',false); }
+}
+window.condividiOra=condividiOra;
 function doPost(body,okMsg,resetFn){
+  /* Le foto vanno fotografate adesso: resetFn() svuota il modulo. */
+  var _fotoInvio=(typeof FOTOS!=='undefined')?FOTOS.slice():[];
   var btn=g('send'); btn.disabled=true; btn.classList.remove('done'); btn.textContent='Invio…';
   var lbl=sendLabel();
   if(!navigator.onLine){ obxAccoda(body,resetFn,lbl); return; }
   fetch(SUPA_URL+'/rest/v1/ore_inbox',{method:'POST',headers:Object.assign({'Prefer':'return=minimal'},H),body:JSON.stringify(body)})
     .then(function(r){
-      if(r.ok){ show(okMsg,true); resetFn();
+      if(r.ok){ show(okMsg,true);
+        try{ condividiPrepara(body,_fotoInvio); }catch(e){}
+        resetFn();
         btn.classList.add('done'); btn.textContent='Invio effettuato';
         setTimeout(function(){ btn.classList.remove('done'); btn.disabled=false; btn.textContent=sendLabel(); },5000);
         obxFlush(false);
