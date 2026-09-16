@@ -71,6 +71,14 @@
   button.send:disabled{background:#3a4b63;color:#8ea4c4}
   button.send.done,button.send.done:disabled{background:#f2c200;color:#3a2e00}
   .msg{margin-top:14px;padding:13px 14px;border-radius:11px;font-size:14px;display:none}
+  .addcoll{width:100%;background:#1f4e8a;border:1px solid #3d7bd6;color:#fff;font-size:15px;
+           padding:12px;border-radius:11px;cursor:pointer;margin-top:2px}
+  .collhint{font-size:12px;color:#8fa4bd;line-height:1.45;margin-top:8px}
+  .collr{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  .collr select{flex:2;min-width:0}
+  .collr input{flex:1;min-width:0;text-align:center}
+  .collx{flex:0 0 46px;background:#4a1e22;border:1px solid #c0392b;color:#ffb3ba;
+         font-size:17px;border-radius:11px;padding:11px 0;cursor:pointer}
   #condividi{margin-top:12px;padding:14px;border-radius:13px;background:#0f2a1c;border:1px solid #1f6b46}
   .condivt{font-size:13px;color:#8fe3b4;margin-bottom:9px;font-weight:600}
   .condivbtn{display:block;width:100%;background:#25d366;border:none;color:#06261a;font-size:16px;font-weight:700;
@@ -160,6 +168,14 @@
     <div id="grpOre">
     <label>Ore</label>
     <input type="number" id="ore" inputmode="decimal" step="0.5" min="0" placeholder="es. 8">
+    </div>
+
+    <div id="grpColleghi">
+    <label>Eravamo in più di uno? Aggiungi i colleghi</label>
+    <div id="colleghiList"></div>
+    <button type="button" class="addcoll" onclick="collAdd()">＋ Aggiungi un tecnico</button>
+    <div class="collhint">Metti solo <b>chi era con te oggi su questo cantiere</b>, con le sue ore.
+    Tu sei già contato qui sopra: non rimetterti.</div>
     </div>
 
     <div id="grpMezzo">
@@ -469,14 +485,64 @@ function bollaMode(){ var cli=(MODO==='cliente'), foto=(MODO==='foto');
   sh('grpNota', !cli && !foto);
   var flbl=g('fotoLbl'); if(flbl) flbl.textContent=foto?'📷 Foto di cantiere o DDT — almeno una, fino a '+FOTO_MAX:'📷 Foto di cantiere o DDT (facoltative, fino a '+FOTO_MAX+')';
   var pv=(typeof AMBITO!=='undefined'&&AMBITO==='postvendita');
+  /* i colleghi hanno senso solo su una giornata di lavoro in cantiere: non su
+     una bolla cliente (che ha gia' i suoi presenti), non su una foto, non su
+     ferie o malattia, non sul post-vendita. Va DOPO la riga di 'pv'. */
+  sh('grpColleghi', !cli && !foto && !pv && ASSENZE.indexOf(TIPO)<0);
+  try{ collRender(); }catch(e){}
   var showComm = (cli||foto)?true:(ASSENZE.indexOf(TIPO)>=0?false:true);
   g('commWrap').style.display = (showComm && !pv) ? 'block' : 'none';
   g('pvWrap').style.display = (showComm && pv) ? 'block' : 'none';
   g('send').textContent=sendLabel();
 }
 window.bollaMode=bollaMode;
+// ---- Altri tecnici sullo stesso cantiere, nello stesso giorno -----------
+// Chi era in cantiere lo sa solo chi c'era: meglio che lo scriva lui adesso,
+// invece di farlo ricostruire all'ufficio due giorni dopo.
+var COLL=[];
+function collNomi(){
+  var s=g('operaioSel'); var out=[];
+  if(s) for(var i=0;i<s.options.length;i++){ var v=s.options[i].value; if(v) out.push(v); }
+  return out;
+}
+function collAdd(){ COLL.push({n:'',o:''}); collRender(); }
+function collDel(i){ COLL.splice(i,1); collRender(); }
+function collSet(i,campo,v){ if(!COLL[i])return; COLL[i][campo]=v; }
+function collRender(){
+  var el=g('colleghiList'); if(!el) return;
+  if(!COLL.length){ el.innerHTML=''; return; }
+  var nomi=collNomi(), mio=g('nome')?g('nome').value:'';
+  var h='';
+  COLL.forEach(function(c,i){
+    h+='<div class="collr">'+
+       '<select onchange="collSet('+i+',\'n\',this.value)">'+
+         '<option value="">\u2014 scegli tecnico \u2014</option>'+
+         nomi.filter(function(n){ return n!==mio; })
+             .map(function(n){ return '<option value="'+n.replace(/"/g,'&quot;')+'"'+(c.n===n?' selected':'')+'>'+n+'</option>'; }).join('')+
+       '</select>'+
+       '<input type="number" inputmode="decimal" step="0.5" min="0" placeholder="ore" value="'+(c.o===''?'':c.o)+'" '+
+         'onchange="collSet('+i+',\'o\',this.value)">'+
+       '<button type="button" class="collx" onclick="collDel('+i+')">\u2715</button>'+
+       '</div>';
+  });
+  el.innerHTML=h;
+}
+/* Quelli davvero compilati. Una riga a meta' non si manda: meglio niente che
+   un tecnico senza ore o delle ore senza nome. */
+function collValidi(){
+  return COLL.filter(function(c){ return String(c.n||'').trim() && Number(String(c.o).replace(',','.'))>0; })
+             .map(function(c){ return {n:String(c.n).trim(), o:Number(String(c.o).replace(',','.'))}; });
+}
+function collIncompleti(){
+  return COLL.filter(function(c){
+    var hn=!!String(c.n||'').trim(), ho=Number(String(c.o).replace(',','.'))>0;
+    return (hn&&!ho)||(!hn&&ho); }).length;
+}
+function collReset(){ COLL=[]; collRender(); }
+window.collAdd=collAdd; window.collDel=collDel; window.collSet=collSet;
 function operaioAdd(){ var v=g('operaioSel').value; if(!v)return; if(OPERAI.indexOf(v)<0){OPERAI.push(v);operaiRender();} g('operaioSel').value=''; }
 window.operaioAdd=operaioAdd;
+function collSyncNome(){ try{ collRender(); }catch(e){} }
 function operaiRender(){ var el=g('operaiList'); if(!el)return; el.innerHTML='';
   if(!OPERAI.length){ el.innerHTML='<span class="chipempty">nessun tecnico aggiunto</span>'; return; }
   OPERAI.forEach(function(n,idx){ var d=document.createElement('span'); d.className='chip'; d.appendChild(document.createTextNode(n+' '));
@@ -573,6 +639,7 @@ function dataURLtoFile(u,nome){
     return new File([arr],nome,{type:(m&&m[1])||'image/jpeg'});
   }catch(e){ return null; }
 }
+function r1(n){ return Math.round(n*10)/10; }
 function dmyIt(s){ s=String(s||''); var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
   return m?(m[3]+'/'+m[2]+'/'+m[1]):s; }
 function commLabel(code){
@@ -590,9 +657,24 @@ function rapportoTesto(b,nFoto){
   var cm=commLabel(b.commessa);
   if(cm) L.push('*Cantiere:* '+cm);
   if(b.data) L.push('*Data:* '+dmyIt(b.data));
-  var chi=b.operai||b.nome; if(chi) L.push('*Tecnici:* '+chi);
+  /* i colleghi arrivano come JSON dal modo Lavoro, come testo dalla bolla */
+  var chi=b.nome||'';
+  try{
+    var op=String(b.operai||'');
+    if(op.charAt(0)==='['){
+      var arr=JSON.parse(op)||[];
+      if(arr.length) chi=(chi?(chi+' ('+String(b.ore).replace('.',',')+'h)'):'')+', '+
+        arr.map(function(c){ return c.n+' ('+String(c.o).replace('.',',')+'h)'; }).join(', ');
+    } else if(op) chi=op;
+  }catch(e){}
+  if(chi) L.push('*Tecnici:* '+chi);
   if(b.tipo && b.tipo!=='DDT/Foto' && b.tipo!=='Bolla' && b.tipo!=='Ordinario') L.push('*Tipo:* '+b.tipo);
-  if(b.ore) L.push('*Ore:* '+String(b.ore).replace('.',','));
+  if(b.ore){
+    var tot=Number(b.ore)||0, nc=0;
+    try{ var o2=String(b.operai||'');
+      if(o2.charAt(0)==='['){ (JSON.parse(o2)||[]).forEach(function(c){ tot+=Number(c.o)||0; nc++; }); } }catch(e){}
+    L.push('*Ore:* '+String(b.ore).replace('.',',')+(nc?(' \u00b7 totale squadra '+String(r1(tot)).replace('.',',')):''));
+  }
   if(b.attivita) L.push('*Attivit\u00e0:* '+b.attivita);
   var mz=[]; if(b.mezzo) mz.push(b.mezzo);
   if(b.km_part!=null&&b.km_part!==''&&b.km_arr!=null&&b.km_arr!=='')
@@ -705,7 +787,12 @@ function invia(){
   var kmp=g('kmpart').value!==''?parseFloat(String(g('kmpart').value).replace(',','.')):null;
   var kma=g('kmarr').value!==''?parseFloat(String(g('kmarr').value).replace(',','.')):null;
   var nota=g('nota').value.trim();
+  var coll=(!pv && ASSENZE.indexOf(TIPO)<0) ? collValidi() : [];
   if(!nome){show('Scegli il tuo nome.',false);return;}
+  if(coll.length && coll.some(function(c){ return c.n===nome; })){
+    show('Ti sei messo anche fra i colleghi: le tue ore sono già quelle qui sopra.',false); return; }
+  if(!pv && ASSENZE.indexOf(TIPO)<0 && collIncompleti()){
+    show('C\'è un collega senza ore (o delle ore senza nome): completalo o toglilo.',false); return; }
   if(!data){show('Inserisci la data.',false);return;}
   if(pv && !pvId){show('Scegli il cliente (post-vendita).',false);return;}
   if(!pv && ASSENZE.indexOf(TIPO)<0 && !comm){show('Scegli la commessa (cantiere).',false);return;}
@@ -713,14 +800,17 @@ function invia(){
   if(kmp!=null && kma!=null && kma<kmp){show('I km di arrivo non possono essere minori dei km di partenza.',false);return;}
   if(FOTO && !FOTO_TIPO){show('Indica se la foto è una Bolla/DDT o Foto da archiviare.',false);return;}
   try{localStorage.setItem('nds_ore_nome',nome);}catch(e){}
+  var _lp=fotoPayload();
   var body={nome:nome,data:data,tipo:TIPO,commessa:comm,ore:ore,status:'pending',
             mezzo:(mezzo||null),km_part:kmp,km_arr:kma,nota:(nota||null),
-            attivita:(attivita||null),firma:(firma||null),foto:(FOTO||null),foto_tipo:(FOTO_TIPO||null),
+            attivita:(attivita||null),firma:(firma||null),foto:_lp.foto,foto_tipo:_lp.foto_tipo,
+            operai:(coll.length?JSON.stringify(coll):null),
             ambito:(pv?'postvendita':'commessa'),cliente_pv_id:(pv?pvId:null),cliente_pv:(pv?pvNome:null)};
+  var _pi=coll.length?(' + '+coll.length+(coll.length===1?' collega':' colleghi')):'';
   var okLbl=pv?('✓ Intervento post-vendita inviato! '+nome+' — '+ore+'h '+TIPO+' · '+pvNome+' del '+data.split('-').reverse().join('/'))
-              :('✓ Ore inviate! '+nome+' — '+ore+'h '+TIPO+(comm?' · '+comm:'')+' del '+data.split('-').reverse().join('/'));
+              :('✓ Ore inviate! '+nome+_pi+' — '+ore+'h '+TIPO+(comm?' · '+comm:'')+' del '+data.split('-').reverse().join('/'));
   doPost(body,okLbl,
-    function(){ g('ore').value=''; g('mezzo').value=''; g('kmpart').value=''; g('kmarr').value=''; g('nota').value=''; g('attivita').value=''; firmaClear(); fotoDel(); g('kmWrap').style.display='none'; });
+    function(){ g('ore').value=''; g('mezzo').value=''; g('kmpart').value=''; g('kmarr').value=''; g('nota').value=''; g('attivita').value=''; firmaClear(); fotoDel(-1); collReset(); g('kmWrap').style.display='none'; });
 }
 if('serviceWorker' in navigator){ window.addEventListener('load',function(){ try{ navigator.serviceWorker.register('sw.js'); }catch(e){} }); }
 </script>
