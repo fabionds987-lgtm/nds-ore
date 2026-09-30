@@ -1,5 +1,5 @@
 /* NDS Ore — service worker: l'app si apre anche senza rete */
-var CACHE='nds-ore-v5';  /* v5: colleghi in cantiere, foto multiple anche sul modulo Lavoro */
+var CACHE='nds-ore-v7';  /* v7: mezzo e km obbligatori · elenco cantieri che si rilegge da solo */
 
 self.addEventListener('install', function (e) {
   e.waitUntil(

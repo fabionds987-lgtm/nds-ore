@@ -179,9 +179,10 @@
     </div>
 
     <div id="grpMezzo">
-    <label>Mezzo usato (facoltativo)</label>
+    <label>Mezzo usato <span style="color:#e03131">*</span></label>
     <select id="mezzo">
-      <option value="">— nessun mezzo —</option>
+      <option value="">— scegli il mezzo —</option>
+      <option value="Nessuno">Nessuno (a piedi o con un collega)</option>
       <option value="Ford Connect piccolo">Ford Connect piccolo</option>
       <option value="Ford Connect medio">Ford Connect medio</option>
       <option value="Ford Connect nuovo">Ford Connect nuovo</option>
@@ -193,11 +194,11 @@
     <div id="kmWrap" style="display:none">
       <div class="row">
         <div>
-          <label>Km partenza</label>
+          <label>Km partenza <span style="color:#e03131">*</span></label>
           <input type="number" id="kmpart" inputmode="numeric" min="0" placeholder="es. 42500">
         </div>
         <div>
-          <label>Km arrivo</label>
+          <label>Km arrivo <span style="color:#e03131">*</span></label>
           <input type="number" id="kmarr" inputmode="numeric" min="0" placeholder="es. 42560">
         </div>
       </div>
@@ -284,7 +285,7 @@ function commRender(filter){
   list.forEach(function(c){
     var o=document.createElement('option');
     o.value=c.code;
-    var lbl=c.code+(c.titolo?' — '+c.titolo:'');
+    var lbl=c.code+(c.titolo?' — '+c.titolo:(c.cliente?'':' — (commessa senza nome)'));
     if(c.cliente) lbl+=' · '+c.cliente;
     lbl+=(c.stato&&c.stato!=='In corso'?' ('+c.stato+')':'');
     o.textContent=lbl;
@@ -361,7 +362,7 @@ function show(t,ok){var m=g('msg');m.textContent=t;m.className='msg '+(ok==='wai
 
 // mostra i km solo se è stato scelto un mezzo
 g('mezzo').addEventListener('change',function(){
-  g('kmWrap').style.display=this.value?'block':'none';
+  g('kmWrap').style.display=(this.value && this.value!=='Nessuno')?'block':'none';
 });
 
 // ---- Firma cliente (canvas) ----
@@ -479,7 +480,7 @@ function bollaMode(){ var cli=(MODO==='cliente'), foto=(MODO==='foto');
   sh('grpTipo', !cli && !foto);
   sh('grpOperai', cli);
   sh('grpOre', !cli && !foto);
-  sh('grpMezzo', !cli && !foto);
+  sh('grpMezzo', !cli && !foto && ASSENZE.indexOf(TIPO)<0);
   sh('grpAttivita', !foto);
   sh('grpFirma', !foto);
   sh('grpNota', !cli && !foto);
@@ -797,6 +798,14 @@ function invia(){
   if(pv && !pvId){show('Scegli il cliente (post-vendita).',false);return;}
   if(!pv && ASSENZE.indexOf(TIPO)<0 && !comm){show('Scegli la commessa (cantiere).',false);return;}
   if(!(ore>0)){show('Inserisci le ore.',false);return;}
+  var _grpM=g('grpMezzo');
+  if(_grpM && _grpM.style.display!=='none' && ASSENZE.indexOf(TIPO)<0){
+    if(!mezzo){show('Scegli il mezzo usato. Se sei andato a piedi o con un collega, scegli «Nessuno».',false);return;}
+    if(mezzo!=='Nessuno'){
+      if(kmp==null){show('Scrivi i km di partenza: sono sul contachilometri del mezzo.',false);return;}
+      if(kma==null){show('Scrivi i km di arrivo: sono sul contachilometri a fine giornata.',false);return;}
+    }
+  }
   if(kmp!=null && kma!=null && kma<kmp){show('I km di arrivo non possono essere minori dei km di partenza.',false);return;}
   if(FOTO && !FOTO_TIPO){show('Indica se la foto è una Bolla/DDT o Foto da archiviare.',false);return;}
   try{localStorage.setItem('nds_ore_nome',nome);}catch(e){}
@@ -813,6 +822,48 @@ function invia(){
     function(){ g('ore').value=''; g('mezzo').value=''; g('kmpart').value=''; g('kmarr').value=''; g('nota').value=''; g('attivita').value=''; firmaClear(); fotoDel(-1); collReset(); g('kmWrap').style.display='none'; });
 }
 if('serviceWorker' in navigator){ window.addEventListener('load',function(){ try{ navigator.serviceWorker.register('sw.js'); }catch(e){} }); }
+
+// ---- elenco cantieri sempre aggiornato (v7) ----
+function commCache(list){ try{ localStorage.setItem('nds_comm_cache', JSON.stringify(list)); }catch(e){} }
+function commLoad(){
+  return fetch(SUPA_URL+'/rest/v1/commesse_pub?select=code,titolo,stato,cliente',{headers:H,cache:'no-store'})
+  .then(function(r){ return r.json(); })
+  .then(function(rows){
+    var comm=Array.isArray(rows)?rows:[];
+    comm=comm.filter(function(c){return c.code && c.code!=='ASSENZE';});
+    comm.sort(function(a,b){
+      var ao=(a.stato==='In corso')?0:1, bo=(b.stato==='In corso')?0:1;
+      if(ao!==bo) return ao-bo;
+      return String(a.code).localeCompare(String(b.code));
+    });
+    if(!comm.length) throw new Error('vuoto');
+    COMM_ALL=comm; commCache(comm);
+    var s=g('commSearch'); commRender(s?s.value:'');
+  })
+  .catch(function(){
+    try{
+      var c=JSON.parse(localStorage.getItem('nds_comm_cache')||'[]');
+      if(c.length){ COMM_ALL=c; var s=g('commSearch'); commRender(s?s.value:''); }
+    }catch(e){}
+  });
+}
+window.commLoad=commLoad;
+document.addEventListener('visibilitychange',function(){ if(!document.hidden) commLoad(); });
+window.addEventListener('online',function(){ commLoad(); });
+try{
+  var _cs=g('commSearch');
+  if(_cs && _cs.parentNode && !document.getElementById('commRefresh')){
+    var _b=document.createElement('button');
+    _b.id='commRefresh'; _b.type='button'; _b.className='addcoll';
+    _b.textContent='↻ Aggiorna elenco cantieri';
+    _b.addEventListener('click',function(){
+      _b.disabled=true; _b.textContent='Aggiorno…';
+      commLoad().then(function(){ _b.disabled=false; _b.textContent='↻ Aggiorna elenco cantieri'; });
+    });
+    _cs.parentNode.insertBefore(_b,_cs.nextSibling);
+  }
+}catch(e){}
+setTimeout(commLoad,1500);
 </script>
 </body>
 </html>
