@@ -95,6 +95,8 @@
   .obxb:disabled{background:#3a4b63;color:#8ea4c4}
   .hint{font-size:12px;color:#7f93b0;margin-top:6px;line-height:1.4}
   .foot{text-align:center;color:#5f7295;font-size:11px;margin-top:22px}
+.firmawrap{position:relative}
+.firmatap{position:absolute;left:0;top:0;right:0;height:150px;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 14px;color:#8a96a3;font-size:15px;cursor:pointer;border-radius:12px}
 </style>
 </head>
 <body>
@@ -231,7 +233,16 @@
     <label id="firmaLbl">Firma del tecnico</label>
     <div class="firmawrap">
       <canvas id="firma" class="firma"></canvas>
+      <div class="firmatap" id="firmaTap" onclick="firmaPad('firma')">✍️ Tocca qui per firmare a tutto schermo</div>
       <button type="button" class="clearfirma" onclick="firmaClear()">Cancella firma</button>
+    </div>
+    </div>
+    <div id="grpFirmaCli" style="display:none">
+    <label id="firmaCliLbl">Firma del cliente</label>
+    <div class="firmawrap">
+      <canvas id="firmaCli" class="firma"></canvas>
+      <div class="firmatap" id="firmaCliTap" onclick="firmaPad('firmaCli')">✍️ Tocca qui per far firmare il cliente a tutto schermo</div>
+      <button type="button" class="clearfirma" onclick="firmaCliClear()">Cancella firma</button>
     </div>
     </div>
     <div id="grpNota">
@@ -404,9 +415,69 @@ function firmaInit(){
   cv.addEventListener('mousedown',start); cv.addEventListener('mousemove',move); window.addEventListener('mouseup',end);
   cv.addEventListener('touchstart',start,{passive:false}); cv.addEventListener('touchmove',move,{passive:false}); cv.addEventListener('touchend',end);
 }
-function firmaClear(){ var cv=g('firma'); if(cv&&_fCtx){ _fCtx.clearRect(0,0,cv.width,cv.height); } _fHas=false; }
-function firmaDataURL(){ var cv=g('firma'); if(!cv||!_fHas)return null; try{return cv.toDataURL('image/png');}catch(e){return null;} }
+function firmaClear(){ FIRMA_FULL=FIRMA_FULL||{}; FIRMA_FULL.firma=null; var t_=g('firmaTap'); if(t_) t_.style.visibility=''; var cv=g('firma'); if(cv&&_fCtx){ _fCtx.clearRect(0,0,cv.width,cv.height); } _fHas=false; }
+function firmaDataURL(){ FIRMA_FULL=FIRMA_FULL||{}; if(FIRMA_FULL.firma) return FIRMA_FULL.firma; var cv=g('firma'); if(!cv||!_fHas)return null; try{return cv.toDataURL('image/png');}catch(e){return null;} }
 window.firmaClear=firmaClear;
+// ---- Firma a tutto schermo (21/11/2026) ----
+// Si tocca il riquadro, si apre un foglio bianco grande quanto il telefono, si firma
+// e con Conferma la firma torna nel modulo. Si salva ritagliata sul tratto, nitida e leggera.
+var FIRMA_FULL=FIRMA_FULL||{};
+function firmaTratto(c,st,ox,oy,k){ if(!st.length) return; c.beginPath(); c.moveTo((st[0].x-ox)*k,(st[0].y-oy)*k);
+  if(st.length===1) c.lineTo((st[0].x-ox)*k+0.1,(st[0].y-oy)*k);
+  for(var i=1;i<st.length;i++) c.lineTo((st[i].x-ox)*k,(st[i].y-oy)*k); c.stroke(); }
+function firmaEsporta(S){ var x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  S.forEach(function(st){ st.forEach(function(p){ if(p.x<x0)x0=p.x; if(p.y<y0)y0=p.y; if(p.x>x1)x1=p.x; if(p.y>y1)y1=p.y; }); });
+  x0-=10; y0-=10; x1+=10; y1+=10; var w=Math.max(20,x1-x0), h=Math.max(20,y1-y0);
+  var k=Math.min(1.5,600/w,240/h); var c=document.createElement('canvas'); c.width=Math.max(1,Math.round(w*k)); c.height=Math.max(1,Math.round(h*k));
+  var x=c.getContext('2d'); x.lineWidth=Math.max(2,3*k); x.lineCap='round'; x.lineJoin='round'; x.strokeStyle='#12263a';
+  S.forEach(function(st){ firmaTratto(x,st,x0,y0,k); });
+  return c.toDataURL('image/png'); }
+function firmaImposta(target,du){ FIRMA_FULL[target]=du; var cv=g(target); if(!cv) return;
+  if(target==='firmaCli'){ try{ firmaCliInit(); }catch(e){} _fcHas=true; } else { _fHas=true; }
+  var tap=g(target==='firma'?'firmaTap':'firmaCliTap'); if(tap) tap.style.visibility='hidden';
+  var im=new Image(); im.onload=function(){ var c2=cv.getContext('2d'); c2.save(); c2.setTransform(1,0,0,1,0,0); c2.clearRect(0,0,cv.width,cv.height);
+    var k=Math.min(cv.width/im.width, cv.height/im.height)*0.92, w=im.width*k, h=im.height*k; c2.drawImage(im,(cv.width-w)/2,(cv.height-h)/2,w,h); c2.restore(); }; im.src=du; }
+function firmaPad(target){ if(g('padOv')) return;
+  var lbl=g(target==='firma'?'firmaLbl':'firmaCliLbl'), titolo=lbl?lbl.textContent:'Firma';
+  var bs='flex:1;padding:15px 8px;font-size:16px;font-weight:600;border-radius:11px;border:none;background:#dfe4ea;color:#12263a;font-family:inherit';
+  var ov=document.createElement('div'); ov.id='padOv';
+  ov.style.cssText='position:fixed;left:0;top:0;right:0;bottom:0;z-index:99999;background:#fff;display:flex;flex-direction:column;touch-action:none';
+  ov.innerHTML='<div style="padding:10px 14px;background:#0f1b2d;color:#fff;font-weight:700;font-size:16px">✍️ '+titolo+
+      '<div style="font-size:12px;font-weight:400;color:#a9bdda;margin-top:2px">Firma con il dito. Puoi girare il telefono in orizzontale per avere più spazio.</div></div>'+
+    '<div style="flex:1;position:relative;overflow:hidden"><canvas id="padCv" style="position:absolute;left:0;top:0;width:100%;height:100%;touch-action:none;background:#fff"></canvas>'+
+      '<div style="position:absolute;left:7%;right:7%;bottom:26%;border-bottom:2px solid #d3d9e0;pointer-events:none"></div>'+
+      '<div id="padVuoto" style="position:absolute;left:0;right:0;top:38%;text-align:center;color:#b9c2cc;font-size:20px;pointer-events:none">Firma qui</div></div>'+
+    '<div style="display:flex;gap:8px;padding:10px;padding-bottom:max(10px,env(safe-area-inset-bottom));background:#f2f4f7">'+
+      '<button type="button" id="padAnn" style="'+bs+'">Annulla</button>'+
+      '<button type="button" id="padCanc" style="'+bs+'">Cancella</button>'+
+      '<button type="button" id="padOk" style="'+bs+';flex:2;background:#1d824a;color:#fff">✓ Conferma firma</button></div>';
+  document.body.appendChild(ov); var oldOv=document.body.style.overflow; document.body.style.overflow='hidden';
+  var cv=g('padCv'), ctx=null, S=[], cur=null, ratio=Math.min(window.devicePixelRatio||1,2);
+  function ridisegna(){ if(!ctx) return; ctx.clearRect(0,0,cv.width,cv.height); S.forEach(function(st){ firmaTratto(ctx,st,0,0,1); }); g('padVuoto').style.display=S.length?'none':''; }
+  function size(){ var r=cv.getBoundingClientRect(); cv.width=Math.max(1,Math.round(r.width*ratio)); cv.height=Math.max(1,Math.round(r.height*ratio));
+    ctx=cv.getContext('2d'); ctx.setTransform(ratio,0,0,ratio,0,0); ctx.lineWidth=3; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#12263a'; ridisegna(); }
+  function pos(e){ var rr=cv.getBoundingClientRect(); var t=e.touches?e.touches[0]:e; return {x:t.clientX-rr.left,y:t.clientY-rr.top}; }
+  function start(e){ e.preventDefault(); cur=[pos(e)]; S.push(cur); g('padVuoto').style.display='none'; }
+  function move(e){ if(!cur) return; e.preventDefault(); var p=pos(e), q=cur[cur.length-1]; cur.push(p); ctx.beginPath(); ctx.moveTo(q.x,q.y); ctx.lineTo(p.x,p.y); ctx.stroke(); }
+  function end(){ if(cur && cur.length===1) ridisegna(); cur=null; }
+  cv.addEventListener('touchstart',start,{passive:false}); cv.addEventListener('touchmove',move,{passive:false}); cv.addEventListener('touchend',end);
+  cv.addEventListener('mousedown',start); cv.addEventListener('mousemove',move); window.addEventListener('mouseup',end);
+  window.addEventListener('resize',size);
+  function chiudi(){ window.removeEventListener('resize',size); window.removeEventListener('mouseup',end); document.body.style.overflow=oldOv; if(ov.parentNode) ov.parentNode.removeChild(ov); }
+  g('padCanc').onclick=function(){ S=[]; ridisegna(); };
+  g('padAnn').onclick=chiudi;
+  g('padOk').onclick=function(){ var du=S.length?firmaEsporta(S):null; chiudi(); if(du) firmaImposta(target,du); };
+  setTimeout(size,0); }
+window.firmaPad=firmaPad;
+// ---- Firma del cliente nel post-vendita (21/11/2026): si aggiunge a quella del tecnico ----
+var _fcHas=false;
+function firmaCliInit(){ var cv=g('firmaCli'); if(!cv) return; var r=cv.getBoundingClientRect(); if(!r.width) return;
+  var ratio=window.devicePixelRatio||1, w=Math.max(1,Math.round(r.width*ratio)); if(cv.width===w) return;
+  cv.width=w; cv.height=Math.max(1,Math.round(r.height*ratio)); if(FIRMA_FULL.firmaCli){ var du=FIRMA_FULL.firmaCli; setTimeout(function(){ firmaImposta('firmaCli',du); },0); } }
+function firmaCliClear(){ var cv=g('firmaCli'); if(cv){ var c=cv.getContext('2d'); c.save(); c.setTransform(1,0,0,1,0,0); c.clearRect(0,0,cv.width,cv.height); c.restore(); }
+  _fcHas=false; FIRMA_FULL.firmaCli=null; var t_=g('firmaCliTap'); if(t_) t_.style.visibility=''; }
+function firmaCliDataURL(){ return (_fcHas && FIRMA_FULL.firmaCli) ? FIRMA_FULL.firmaCli : null; }
+window.firmaCliClear=firmaCliClear;
 firmaInit();
 
 // ---- Foto di cantiere: piu' scatti in un invio solo ----
@@ -516,6 +587,7 @@ function bollaMode(){ var cli=(MODO==='cliente'), foto=(MODO==='foto');
   var showComm = (cli||foto)?true:(ASSENZE.indexOf(TIPO)>=0?false:true);
   g('commWrap').style.display = (showComm && !pv) ? 'block' : 'none';
   g('pvWrap').style.display = (showComm && pv) ? 'block' : 'none';
+  sh('grpFirmaCli', pv && !cli && !foto); if(pv && !cli && !foto) setTimeout(function(){ try{ firmaCliInit(); }catch(e){} },30);
   g('send').textContent=sendLabel();
 }
 window.bollaMode=bollaMode;
@@ -844,11 +916,12 @@ function invia(){
             attivita:(attivita||null),firma:(firma||null),foto:_lp.foto,foto_tipo:_lp.foto_tipo,
             operai:(coll.length?JSON.stringify(coll):null),
             ambito:(pv?'postvendita':'commessa'),cliente_pv_id:(pv?pvId:null),cliente_pv:(pv?pvNome:null)};
+  if(pv) body.firma_cli=firmaCliDataURL()||null;
   var _pi=coll.length?(' + '+coll.length+(coll.length===1?' collega':' colleghi')):'';
   var okLbl=pv?('✓ Intervento post-vendita inviato! '+nome+' — '+ore+'h '+TIPO+' · '+pvNome+' del '+data.split('-').reverse().join('/'))
               :('✓ Ore inviate! '+nome+_pi+' — '+ore+'h '+TIPO+(comm?' · '+comm:'')+' del '+data.split('-').reverse().join('/'));
   doPost(body,okLbl,
-    function(){ g('ore').value=''; g('mezzo').value=''; g('kmpart').value=''; g('kmarr').value=''; g('nota').value=''; g('attivita').value=''; firmaClear(); fotoDel(-1); collReset(); g('kmWrap').style.display='none'; });
+    function(){ g('ore').value=''; g('mezzo').value=''; g('kmpart').value=''; g('kmarr').value=''; g('nota').value=''; g('attivita').value=''; firmaClear(); fotoDel(-1); collReset(); try{ firmaCliClear(); }catch(e){} g('kmWrap').style.display='none'; });
 }
 if('serviceWorker' in navigator){ window.addEventListener('load',function(){ try{ navigator.serviceWorker.register('sw.js'); }catch(e){} }); }
 
