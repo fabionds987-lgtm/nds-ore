@@ -109,9 +109,10 @@
 
   <div class="card">
     <label>Ambito</label>
-    <div class="tipi" id="ambiti" style="grid-template-columns:repeat(2,1fr)">
+    <div class="tipi" id="ambiti" style="grid-template-columns:repeat(3,1fr)">
       <div class="modo on" data-a="commessa">🏗️ Commessa</div>
       <div class="modo" data-a="postvendita">🔧 Post-vendita</div>
+      <div class="modo" data-a="cantiere">📋 Richiesta cantiere</div>
     </div>
     <div class="hint" id="ambitoHint" style="margin-top:6px">Ore su una commessa/cantiere in corso.</div>
 
@@ -177,6 +178,13 @@
         <label>Città</label>
         <input type="text" id="pvnCitta" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="es. Bari">
       </div>
+    </div>
+
+    <div id="grpCoReq" style="display:none">
+    <label>Che richiesta è</label>
+    <select id="coTipo"><option value="">— scegli —</option><option>Proseguire il cantiere</option><option>Richiesta di intervento</option><option>Manca materiale</option><option>Problema in cantiere</option><option>Altro</option></select>
+    <label>Urgenza</label>
+    <select id="coUrg"><option>Normale</option><option>Urgente</option><option>Programmabile</option></select>
     </div>
 
     <div id="grpOre">
@@ -382,9 +390,9 @@ if(ambitiEl){ ambitiEl.addEventListener('click',function(e){
   AMBITO=el.getAttribute('data-a');
   [].forEach.call(ambitiEl.querySelectorAll('.modo'),function(x){x.classList.toggle('on',x===el);});
   var pv=(AMBITO==='postvendita');
-  g('ambitoHint').textContent=pv?'Intervento di assistenza/manutenzione su un cliente già concluso.':'Ore su una commessa/cantiere in corso.';
-  g('grpModi').style.display=pv?'none':'';
-  if(pv){ MODO='lavoro'; [].forEach.call(document.querySelectorAll('#modi .modo'),function(x){x.classList.toggle('on',x.getAttribute('data-m')==='lavoro');}); }
+  g('ambitoHint').textContent=(AMBITO==='cantiere')?'Richiesta per proseguire un cantiere o per un intervento: arriva in ufficio in «Cantieri da organizzare».':(pv?'Intervento di assistenza/manutenzione su un cliente già concluso.':'Ore su una commessa/cantiere in corso.');
+  g('grpModi').style.display=(pv||AMBITO==='cantiere')?'none':'';
+  if(pv||AMBITO==='cantiere'){ MODO='lavoro'; [].forEach.call(document.querySelectorAll('#modi .modo'),function(x){x.classList.toggle('on',x.getAttribute('data-m')==='lavoro');}); }
   bollaMode();
 }); }
 
@@ -563,7 +571,7 @@ function fotoPayload(){
 window.fotoPick=fotoPick; window.fotoDel=fotoDel; window.fotoTipoSet=fotoTipoSet;
 
 var OPERAI=[]; var MODO='lavoro';
-function sendLabel(){ if(typeof AMBITO!=='undefined'&&AMBITO==='postvendita') return 'Invia intervento post-vendita';
+function sendLabel(){ if(typeof AMBITO!=='undefined'&&AMBITO==='cantiere') return 'Invia richiesta'; if(typeof AMBITO!=='undefined'&&AMBITO==='postvendita') return 'Invia intervento post-vendita';
   return MODO==='foto'?('Invia '+(FOTOS.length>1?(FOTOS.length+' foto'):'foto')):(MODO==='cliente'?'Invia bolla cliente':'Invia bolla lavoro'); }
 function bollaMode(){ var cli=(MODO==='cliente'), foto=(MODO==='foto');
   var fl=g('firmaLbl'); if(fl) fl.textContent=cli?'Firma del cliente':'Firma del tecnico';
@@ -587,7 +595,13 @@ function bollaMode(){ var cli=(MODO==='cliente'), foto=(MODO==='foto');
   var showComm = (cli||foto)?true:(ASSENZE.indexOf(TIPO)>=0?false:true);
   g('commWrap').style.display = (showComm && !pv) ? 'block' : 'none';
   g('pvWrap').style.display = (showComm && pv) ? 'block' : 'none';
-  sh('grpFirmaCli', pv && !cli && !foto); if(pv && !cli && !foto) setTimeout(function(){ try{ firmaCliInit(); }catch(e){} },30);
+  sh('grpFirmaCli', pv && !cli && !foto);
+  /* 21/11/2026: richiesta cantiere — niente ore, mezzo, colleghi, firme */
+  var ca=(typeof AMBITO!=='undefined'&&AMBITO==='cantiere'); sh('grpCoReq',ca);
+  if(ca){ ['grpOre','grpMezzo','grpColleghi','grpFirma','grpFirmaCli','grpTipo'].forEach(function(k){ sh(k,false); });
+    g('commWrap').style.display='block'; g('pvWrap').style.display='none'; var _kw=g('kmWrap'); if(_kw) _kw.style.display='none'; }
+  var _al=document.querySelector('#grpAttivita label'); if(_al){ if(!_al.getAttribute('data-orig')) _al.setAttribute('data-orig',_al.textContent); _al.textContent=ca?'Cosa serve (spiega bene: cosa fare, cosa manca, dove)':_al.getAttribute('data-orig'); }
+  var _at=g('attivita'); if(_at){ if(!_at.getAttribute('data-ph')) _at.setAttribute('data-ph',_at.placeholder); _at.placeholder=ca?'Es. finire la posa del bordo; mancano 20 m di bordo; il cliente chiede di…':_at.getAttribute('data-ph'); } if(pv && !cli && !foto) setTimeout(function(){ try{ firmaCliInit(); }catch(e){} },30);
   g('send').textContent=sendLabel();
 }
 window.bollaMode=bollaMode;
@@ -838,6 +852,22 @@ function invia(){
   var data=g('data').value;
   var attivita=g('attivita').value.trim();
   var firma=firmaDataURL();
+  /* 21/11/2026: richiesta cantiere -> in ufficio in «Cantieri da organizzare» */
+  if(typeof AMBITO!=='undefined' && AMBITO==='cantiere'){
+    var cnome=g('nome').value, ccomm=g('commessa').value, ctipo=g('coTipo').value, curg=g('coUrg').value||'Normale', cnota=g('nota').value.trim();
+    if(!cnome){show('Scegli il tuo nome.',false);return;}
+    if(!ccomm){show('Scegli il cantiere (commessa).',false);return;}
+    if(!ctipo){show('Scegli che richiesta è.',false);return;}
+    if(!attivita){show('Scrivi cosa serve.',false);return;}
+    if(FOTO && !FOTO_TIPO){ FOTO_TIPO='Foto'; }
+    try{localStorage.setItem('nds_ore_nome',cnome);}catch(e){}
+    var _cp=fotoPayload();
+    var cbody={nome:cnome,data:(data||null),tipo:ctipo,commessa:ccomm,ore:null,status:'pending',nota:(cnota||null),attivita:attivita,
+               foto:_cp.foto,foto_tipo:_cp.foto_tipo,ambito:'cantiere',urgenza:curg};
+    doPost(cbody,'✓ Richiesta inviata! '+ccomm+' — '+ctipo+(curg==='Urgente'?' (URGENTE)':''),
+      function(){ g('attivita').value=''; g('nota').value=''; fotoDel(-1); g('coTipo').value=''; g('coUrg').value='Normale'; });
+    return;
+  }
   if(MODO==='foto'){
     var fnome=g('nome').value, fcomm=g('commessa').value;
     if(!fnome){show('Scegli il tuo nome.',false);return;}

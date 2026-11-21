@@ -1,5 +1,5 @@
 /* NDS Ore — service worker: l'app si apre anche senza rete */
-var CACHE='nds-ore-v10';  /* v8: mezzo e km obbligatori · elenco cantieri che si rilegge da solo */
+var CACHE='nds-ore-v11';  /* v8: mezzo e km obbligatori · elenco cantieri che si rilegge da solo */
 
 self.addEventListener('install', function (e) {
   e.waitUntil(
