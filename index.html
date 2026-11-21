@@ -163,6 +163,18 @@
       <input type="text" id="pvSearch" class="searchbox" placeholder="🔎 Cerca cliente…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
       <div class="searchcount" id="pvCount"></div>
       <select id="clientePV"><option value="">— caricamento… —</option></select>
+      <button type="button" class="addcoll" id="pvNuovoBtn" style="margin-top:8px" onclick="pvNuovoToggle()">＋ Cliente nuovo (non è in elenco)</button>
+      <div id="pvNuovoBox" style="display:none">
+        <div class="hint">Cliente non registrato: scrivi i suoi dati, in ufficio lo trovano negli Interventi.</div>
+        <label>Nome</label>
+        <input type="text" id="pvnNome" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="es. Mario">
+        <label>Cognome</label>
+        <input type="text" id="pvnCognome" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="es. Rossi (o nome della ditta)">
+        <label>Telefono</label>
+        <input type="tel" id="pvnTel" inputmode="tel" autocomplete="off" placeholder="es. 333 1234567">
+        <label>Città</label>
+        <input type="text" id="pvnCitta" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="es. Bari">
+      </div>
     </div>
 
     <div id="grpOre">
@@ -328,6 +340,16 @@ function cliPVRender(filter){
   var cnt=g('pvCount'); if(cnt) cnt.textContent=f?(list.length+' trovati su '+CLIPV_ALL.length):'';
 }
 window.cliPVRender=cliPVRender;
+// cliente nuovo (non in elenco) per il post-vendita: nome, cognome, telefono, citta'
+var PVNUOVO=false;
+function pvNuovoToggle(){ PVNUOVO=!PVNUOVO;
+  g('pvNuovoBox').style.display=PVNUOVO?'':'none';
+  ['pvSearch','clientePV','pvCount'].forEach(function(k){ var e=g(k); if(e) e.style.display=PVNUOVO?'none':''; });
+  g('pvNuovoBtn').textContent=PVNUOVO?'↩ Il cliente è in elenco: torna alla ricerca':'＋ Cliente nuovo (non è in elenco)';
+  if(PVNUOVO) setTimeout(function(){ try{ g('pvnNome').focus(); }catch(e){} },50);
+}
+window.pvNuovoToggle=pvNuovoToggle;
+function pvnVal(id){ return String((g(id)||{}).value||'').replace(/[\u2014,|]/g,' ').replace(/\s+/g,' ').trim(); }
 fetch(SUPA_URL+'/rest/v1/clienti_pub?select=id,rag,stato',{headers:H})
   .then(function(r){return r.json();})
   .then(function(rows){
@@ -782,8 +804,10 @@ function invia(){
   var nome=g('nome').value, ore=parseFloat(String(g('ore').value).replace(',','.'));
   var comm=(pv||ASSENZE.indexOf(TIPO)>=0)?'':g('commessa').value;
   var pvSel=pv?g('clientePV'):null;
-  var pvId=pv?g('clientePV').value:'';
+  var pvId=pv?(PVNUOVO?'NUOVO':g('clientePV').value):'';
   var pvNome=(pv&&pvSel&&pvSel.selectedIndex>=0)?pvSel.options[pvSel.selectedIndex].textContent:'';
+  var pvn=(pv&&PVNUOVO)?{n:pvnVal('pvnNome'),c:pvnVal('pvnCognome'),t:String(g('pvnTel').value||'').replace(/[^0-9+ ]/g,'').replace(/\s+/g,' ').trim(),ci:pvnVal('pvnCitta')}:null;
+  if(pvn) pvNome=pvn.c+', '+pvn.n+' \u2014 '+pvn.ci+' \u2014 tel '+pvn.t;
   var mezzo=g('mezzo').value;
   var kmp=g('kmpart').value!==''?parseFloat(String(g('kmpart').value).replace(',','.')):null;
   var kma=g('kmarr').value!==''?parseFloat(String(g('kmarr').value).replace(',','.')):null;
@@ -795,6 +819,11 @@ function invia(){
   if(!pv && ASSENZE.indexOf(TIPO)<0 && collIncompleti()){
     show('C\'è un collega senza ore (o delle ore senza nome): completalo o toglilo.',false); return; }
   if(!data){show('Inserisci la data.',false);return;}
+  if(pvn){
+    if(!pvn.n||!pvn.c){show('Cliente nuovo: scrivi nome e cognome.',false);return;}
+    if(pvn.t.replace(/[^0-9]/g,'').length<6){show('Cliente nuovo: scrivi il numero di telefono.',false);return;}
+    if(!pvn.ci){show('Cliente nuovo: scrivi la città.',false);return;}
+  }
   if(pv && !pvId){show('Scegli il cliente (post-vendita).',false);return;}
   if(!pv && ASSENZE.indexOf(TIPO)<0 && !comm){show('Scegli la commessa (cantiere).',false);return;}
   if(!(ore>0)){show('Inserisci le ore.',false);return;}
