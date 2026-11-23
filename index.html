@@ -237,6 +237,23 @@
     <input type="file" id="fotoInput" accept="image/*" multiple style="display:none" onchange="fotoPick(this)">
     <div id="fotoPreview" class="fotoprev"></div>
 
+    <div id="grpPag" style="display:none">
+    <label>Pagamento dell'intervento</label>
+    <div class="tipi" id="pagScelta" style="grid-template-columns:repeat(3,1fr)">
+      <div class="modo" data-pg="si">💶 Pagato</div>
+      <div class="modo" data-pg="no">🧾 Non pagato</div>
+      <div class="modo" data-pg="contratto">📄 Contratto di manutenzione</div>
+    </div>
+    <div id="pagSiBox" style="display:none">
+      <label>Importo ricevuto (€)</label>
+      <input type="number" id="pagImporto" inputmode="decimal" step="0.01" min="0" placeholder="es. 120">
+      <label>Modo di pagamento</label>
+      <select id="pagModo"><option value="">— scegli —</option><option>Contanti</option><option>POS / Carta</option><option>Assegno</option><option>Bonifico</option></select>
+    </div>
+    <label id="pagAssWrap" style="display:none;align-items:center;gap:8px;margin-top:10px;color:#e8eef7"><input type="checkbox" id="pagAssente" style="width:auto;transform:scale(1.3)"> Il cliente non è presente e non può firmare</label>
+    <div class="hint" id="pagDich" style="color:#ffd27a;font-size:13px"></div>
+    </div>
+
     <div id="grpFirma">
     <label id="firmaLbl">Firma del tecnico</label>
     <div class="firmawrap">
@@ -247,6 +264,7 @@
     </div>
     <div id="grpFirmaCli" style="display:none">
     <label id="firmaCliLbl">Firma del cliente</label>
+    <div id="pagDichFirma" style="display:none;color:#ffd27a;font-size:13px;margin:0 0 6px"></div>
     <div class="firmawrap">
       <canvas id="firmaCli" class="firma"></canvas>
       <div class="firmatap" id="firmaCliTap" onclick="firmaPad('firmaCli')">✍️ Tocca qui per far firmare il cliente a tutto schermo</div>
@@ -272,7 +290,7 @@
 var SUPA_URL='https://xvmzrkepelfvudmljiij.supabase.co';
 var SUPA_KEY='sb_publishable_XAZoUpy64XJQ9IbZq9UVdw_7MKCP0Fu';
 var H={'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json'};
-var NOMI=['Roberto Cavaliere','Rosa Ficco','Daniele Di Pinto','Walter Lamanuzzi','Giovanni Catino','Carlo Consiglio','Giovanni De Pasquale','Nicola Ferrante','Giuseppe Gentile','Francesco Papagni','Thiago Souza De Oliveira','Vincenzo Povia','Marco Acquaviva'];
+var NOMI=['Fabio Cavaliere','Roberto Cavaliere','Rosa Ficco','Daniele Di Pinto','Walter Lamanuzzi','Giovanni Catino','Carlo Consiglio','Giovanni De Pasquale','Nicola Ferrante','Giuseppe Gentile','Francesco Papagni','Thiago Souza De Oliveira','Vincenzo Povia','Marco Acquaviva'];
 var TIPO='Ordinario';
 var ASSENZE=['Permesso','Ferie','Malattia'];
 
@@ -446,11 +464,11 @@ function firmaImposta(target,du){ FIRMA_FULL[target]=du; var cv=g(target); if(!c
   var im=new Image(); im.onload=function(){ var c2=cv.getContext('2d'); c2.save(); c2.setTransform(1,0,0,1,0,0); c2.clearRect(0,0,cv.width,cv.height);
     var k=Math.min(cv.width/im.width, cv.height/im.height)*0.92, w=im.width*k, h=im.height*k; c2.drawImage(im,(cv.width-w)/2,(cv.height-h)/2,w,h); c2.restore(); }; im.src=du; }
 function firmaPad(target){ if(g('padOv')) return;
-  var lbl=g(target==='firma'?'firmaLbl':'firmaCliLbl'), titolo=lbl?lbl.textContent:'Firma';
+  var lbl=g(target==='firma'?'firmaLbl':'firmaCliLbl'), titolo=lbl?lbl.textContent:'Firma'; var _dich=(target==='firmaCli')?pagDichTesto():'';
   var bs='flex:1;padding:15px 8px;font-size:16px;font-weight:600;border-radius:11px;border:none;background:#dfe4ea;color:#12263a;font-family:inherit';
   var ov=document.createElement('div'); ov.id='padOv';
   ov.style.cssText='position:fixed;left:0;top:0;right:0;bottom:0;z-index:99999;background:#fff;display:flex;flex-direction:column;touch-action:none';
-  ov.innerHTML='<div style="padding:10px 14px;background:#0f1b2d;color:#fff;font-weight:700;font-size:16px">✍️ '+titolo+
+  ov.innerHTML='<div style="padding:10px 14px;background:#0f1b2d;color:#fff;font-weight:700;font-size:16px">✍️ '+titolo+(_dich?('<div style="font-size:15px;color:#ffd27a;margin-top:4px">'+_dich.replace(/</g,'&lt;')+'</div>'):'')+
       '<div style="font-size:12px;font-weight:400;color:#a9bdda;margin-top:2px">Firma con il dito. Puoi girare il telefono in orizzontale per avere più spazio.</div></div>'+
     '<div style="flex:1;position:relative;overflow:hidden"><canvas id="padCv" style="position:absolute;left:0;top:0;width:100%;height:100%;touch-action:none;background:#fff"></canvas>'+
       '<div style="position:absolute;left:7%;right:7%;bottom:26%;border-bottom:2px solid #d3d9e0;pointer-events:none"></div>'+
@@ -486,6 +504,22 @@ function firmaCliClear(){ var cv=g('firmaCli'); if(cv){ var c=cv.getContext('2d'
   _fcHas=false; FIRMA_FULL.firmaCli=null; var t_=g('firmaCliTap'); if(t_) t_.style.visibility=''; }
 function firmaCliDataURL(){ return (_fcHas && FIRMA_FULL.firmaCli) ? FIRMA_FULL.firmaCli : null; }
 window.firmaCliClear=firmaCliClear;
+var PAG='';
+function pagDichTesto(){ var nome=(g('nome')||{}).value||'';
+  if(PAG==='si'){ var imp=parseFloat(String((g('pagImporto')||{}).value||'').replace(',','.')), modo=(g('pagModo')||{}).value||'';
+    return 'Il cliente dichiara di aver pagato '+(imp>0?('€ '+imp.toFixed(2).replace('.',',')):'€ …')+(modo?(' ('+modo.toLowerCase()+')'):'')+' al tecnico'+(nome?(' '+nome):'')+'.'; }
+  if(PAG==='no') return 'Il cliente dichiara di NON aver pagato l\'intervento al tecnico.';
+  if(PAG==='contratto') return 'Intervento in contratto di manutenzione: il pagamento avviene secondo le modalità del contratto.';
+  return ''; }
+function pagAggiorna(){ var sc=g('pagScelta'); if(sc) [].forEach.call(sc.querySelectorAll('.modo'),function(x){ x.classList.toggle('on',x.getAttribute('data-pg')===PAG); });
+  var sb=g('pagSiBox'); if(sb) sb.style.display=(PAG==='si')?'':'none';
+  var aw=g('pagAssWrap'); if(aw) aw.style.display=(PAG==='no'||PAG==='contratto')?'flex':'none';
+  if(PAG==='si'){ var ck=g('pagAssente'); if(ck) ck.checked=false; }
+  var t=pagDichTesto(); var d=g('pagDich'); if(d) d.textContent=t; var d2=g('pagDichFirma'); if(d2){ d2.textContent=t; d2.style.display=t?'':'none'; } }
+(function(){ var sc=g('pagScelta'); if(sc) sc.addEventListener('click',function(e){ var el=e.target.closest('.modo'); if(!el) return; PAG=el.getAttribute('data-pg'); pagAggiorna(); });
+  ['pagImporto','pagModo','nome'].forEach(function(k){ var e=g(k); if(e){ e.addEventListener('input',pagAggiorna); e.addEventListener('change',pagAggiorna); } }); })();
+function pagReset(){ PAG=''; var a=g('pagImporto'); if(a) a.value=''; var m=g('pagModo'); if(m) m.value=''; var ck=g('pagAssente'); if(ck) ck.checked=false; pagAggiorna(); }
+window.pagReset=pagReset;
 firmaInit();
 
 // ---- Foto di cantiere: piu' scatti in un invio solo ----
@@ -597,7 +631,7 @@ function bollaMode(){ var cli=(MODO==='cliente'), foto=(MODO==='foto');
   g('pvWrap').style.display = (showComm && pv) ? 'block' : 'none';
   sh('grpFirmaCli', pv && !cli && !foto);
   /* 21/11/2026: richiesta cantiere — niente ore, mezzo, colleghi, firme */
-  var ca=(typeof AMBITO!=='undefined'&&AMBITO==='cantiere'); sh('grpCoReq',ca);
+  var ca=(typeof AMBITO!=='undefined'&&AMBITO==='cantiere'); sh('grpCoReq',ca); sh('grpPag', pv && !cli && !foto && !ca);
   if(ca){ ['grpOre','grpMezzo','grpColleghi','grpFirma','grpFirmaCli','grpTipo'].forEach(function(k){ sh(k,false); });
     g('commWrap').style.display='block'; g('pvWrap').style.display='none'; var _kw=g('kmWrap'); if(_kw) _kw.style.display='none'; }
   var _al=document.querySelector('#grpAttivita label'); if(_al){ if(!_al.getAttribute('data-orig')) _al.setAttribute('data-orig',_al.textContent); _al.textContent=ca?'Cosa serve (spiega bene: cosa fare, cosa manca, dove)':_al.getAttribute('data-orig'); }
@@ -927,6 +961,11 @@ function invia(){
     if(!pvn.ci){show('Cliente nuovo: scrivi la città.',false);return;}
   }
   if(pv && !pvId){show('Scegli il cliente (post-vendita).',false);return;}
+  if(pv){ if(!PAG){show('Indica il pagamento: pagato, non pagato o contratto di manutenzione.',false);return;}
+    if(PAG==='si'){ var _pi=parseFloat(String(g('pagImporto').value).replace(',','.')); if(!(_pi>0)){show('Scrivi l\'importo ricevuto.',false);return;}
+      if(!g('pagModo').value){show('Scegli il modo di pagamento.',false);return;} }
+    var _ass=(PAG!=='si') && g('pagAssente') && g('pagAssente').checked && !firmaCliDataURL();
+    if(!_ass && !firmaCliDataURL()){show(PAG==='si'?'Fai firmare il cliente: con la firma dichiara di aver pagato.':'Fai firmare il cliente, oppure spunta «Il cliente non è presente».',false);return;} }
   if(!pv && ASSENZE.indexOf(TIPO)<0 && !comm){show('Scegli la commessa (cantiere).',false);return;}
   if(!(ore>0)){show('Inserisci le ore.',false);return;}
   var _grpM=g('grpMezzo');
@@ -947,11 +986,13 @@ function invia(){
             operai:(coll.length?JSON.stringify(coll):null),
             ambito:(pv?'postvendita':'commessa'),cliente_pv_id:(pv?pvId:null),cliente_pv:(pv?pvNome:null)};
   if(pv) body.firma_cli=firmaCliDataURL()||null;
+  if(pv){ body.pagato=PAG; body.pag_importo=(PAG==='si')?parseFloat(String(g('pagImporto').value).replace(',','.')):null;
+    body.pag_modo=(PAG==='si')?g('pagModo').value:((g('pagAssente')&&g('pagAssente').checked&&!firmaCliDataURL())?'Cliente assente':null); }
   var _pi=coll.length?(' + '+coll.length+(coll.length===1?' collega':' colleghi')):'';
   var okLbl=pv?('✓ Intervento post-vendita inviato! '+nome+' — '+ore+'h '+TIPO+' · '+pvNome+' del '+data.split('-').reverse().join('/'))
               :('✓ Ore inviate! '+nome+_pi+' — '+ore+'h '+TIPO+(comm?' · '+comm:'')+' del '+data.split('-').reverse().join('/'));
   doPost(body,okLbl,
-    function(){ g('ore').value=''; g('mezzo').value=''; g('kmpart').value=''; g('kmarr').value=''; g('nota').value=''; g('attivita').value=''; firmaClear(); fotoDel(-1); collReset(); try{ firmaCliClear(); }catch(e){} g('kmWrap').style.display='none'; });
+    function(){ g('ore').value=''; g('mezzo').value=''; g('kmpart').value=''; g('kmarr').value=''; g('nota').value=''; g('attivita').value=''; firmaClear(); fotoDel(-1); collReset(); try{ firmaCliClear(); }catch(e){} try{ pagReset(); }catch(e){} g('kmWrap').style.display='none'; });
 }
 if('serviceWorker' in navigator){ window.addEventListener('load',function(){ try{ navigator.serviceWorker.register('sw.js'); }catch(e){} }); }
 
