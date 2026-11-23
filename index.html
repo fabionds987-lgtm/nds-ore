@@ -288,9 +288,14 @@
 
 <script>
 var SUPA_URL='https://xvmzrkepelfvudmljiij.supabase.co';
-var SUPA_KEY='sb_publishable_XAZoUpy64XJQ9IbZq9UVdw_7MKCP0Fu';
+var FUNC=SUPA_URL+'/functions/v1/app-api';
+var CODICE=''; var APP_NOME=''; var APP_TECNICI=[];
+var _loginRes; var loginReady=new Promise(function(r){_loginRes=r;});
+function appApiArr(az){return loginReady.then(function(){return fetch(FUNC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({azione:az,codice:CODICE})});});}
+function appApiSend(riga){return loginReady.then(function(){return fetch(FUNC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({azione:'invia',codice:CODICE,riga:riga})});});}
+var SUPA_KEY='';
 var H={'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json'};
-var NOMI=['Fabio Cavaliere','Roberto Cavaliere','Rosa Ficco','Daniele Di Pinto','Walter Lamanuzzi','Giovanni Catino','Carlo Consiglio','Giovanni De Pasquale','Nicola Ferrante','Giuseppe Gentile','Francesco Papagni','Thiago Souza De Oliveira','Vincenzo Povia','Marco Acquaviva'];
+var NOMI=[];
 var TIPO='Ordinario';
 var ASSENZE=['Permesso','Ferie','Malattia'];
 
@@ -344,7 +349,7 @@ function commRender(filter){
   var cnt=g('commCount'); if(cnt) cnt.textContent=f?(list.length+' trovate su '+COMM_ALL.length):'';
 }
 window.commRender=commRender;
-fetch(SUPA_URL+'/rest/v1/commesse_pub?select=code,titolo,stato,cliente',{headers:H})
+appApiArr('commesse')
   .then(function(r){return r.json();})
   .then(function(rows){
     var comm=Array.isArray(rows)?rows:[];
@@ -387,7 +392,7 @@ function pvNuovoToggle(){ PVNUOVO=!PVNUOVO;
 }
 window.pvNuovoToggle=pvNuovoToggle;
 function pvnVal(id){ return String((g(id)||{}).value||'').replace(/[\u2014,|]/g,' ').replace(/\s+/g,' ').trim(); }
-fetch(SUPA_URL+'/rest/v1/clienti_pub?select=id,rag,stato',{headers:H})
+appApiArr('clienti')
   .then(function(r){return r.json();})
   .then(function(rows){
     var cli=Array.isArray(rows)?rows:[];
@@ -735,7 +740,7 @@ function obxFlush(manuale){
     var cur=obxLoad();
     if(!cur.length){ fine(); return; }
     var it=cur[0];
-    fetch(SUPA_URL+'/rest/v1/ore_inbox',{method:'POST',headers:Object.assign({'Prefer':'return=minimal'},H),body:JSON.stringify(it.body)})
+    appApiSend(it.body)
       .then(function(r){
         if(r.ok){ togli(it.id); inviati++; obxRender(); next(); }
         else if(r.status>=400 && r.status<500){ togli(it.id); scartati++; obxRender(); next(); }
@@ -869,7 +874,7 @@ function doPost(body,okMsg,resetFn){
   var btn=g('send'); btn.disabled=true; btn.classList.remove('done'); btn.textContent='Invio…';
   var lbl=sendLabel();
   if(!navigator.onLine){ obxAccoda(body,resetFn,lbl); return; }
-  fetch(SUPA_URL+'/rest/v1/ore_inbox',{method:'POST',headers:Object.assign({'Prefer':'return=minimal'},H),body:JSON.stringify(body)})
+  appApiSend(body)
     .then(function(r){
       if(r.ok){ show(okMsg,true);
         try{ condividiPrepara(body,_fotoInvio); }catch(e){}
@@ -999,7 +1004,7 @@ if('serviceWorker' in navigator){ window.addEventListener('load',function(){ try
 // ---- elenco cantieri sempre aggiornato (v7) ----
 function commCache(list){ try{ localStorage.setItem('nds_comm_cache', JSON.stringify(list)); }catch(e){} }
 function commLoad(){
-  return fetch(SUPA_URL+'/rest/v1/commesse_pub?select=code,titolo,stato,cliente',{headers:H,cache:'no-store'})
+  return appApiArr('commesse')
   .then(function(r){ return r.json(); })
   .then(function(rows){
     var comm=Array.isArray(rows)?rows:[];
@@ -1037,6 +1042,45 @@ try{
   }
 }catch(e){}
 setTimeout(commLoad,1500);
+</script>
+
+<script>
+(function(){
+  var css='#codeGate{position:fixed;inset:0;z-index:999999;background:#0f1b2d;color:#fff;display:flex;align-items:center;justify-content:center;font-family:inherit}#codeGate .cg{width:88%;max-width:360px;text-align:center}#codeGate h2{margin:0 0 6px;font-size:20px}#codeGate p{margin:0 0 18px;opacity:.75;font-size:14px}#codeGate input{width:100%;box-sizing:border-box;font-size:34px;letter-spacing:10px;text-align:center;padding:14px;border-radius:12px;border:none;margin-bottom:12px}#codeGate button{width:100%;font-size:18px;padding:14px;border-radius:12px;border:none;background:#2d7ff9;color:#fff;font-weight:600}#codeGate button:disabled{opacity:.5}#cgErr{min-height:20px;margin-top:12px;color:#ff9a9a;font-size:14px}';
+  var st=document.createElement('style'); st.textContent=css; document.head.appendChild(st);
+  var gate=document.createElement('div'); gate.id='codeGate';
+  gate.innerHTML='<div class=\'cg\'><h2>Accesso tecnico</h2><p>Inserisci il tuo codice personale</p><input id=\'cgCode\' type=\'tel\' inputmode=\'numeric\' autocomplete=\'off\' maxlength=\'8\' placeholder=\'••••\'><button id=\'cgBtn\'>Entra</button><div id=\'cgErr\'></div></div>';
+  document.body.appendChild(gate);
+  var inp=document.getElementById('cgCode'), btn=document.getElementById('cgBtn'), er=document.getElementById('cgErr');
+  function err(m){ er.textContent=m||''; }
+  function popola(){
+    var sn=document.getElementById('nome'); if(sn){ sn.innerHTML=''; var o=document.createElement('option'); o.value=APP_NOME; o.textContent=APP_NOME; sn.appendChild(o); sn.value=APP_NOME; sn.disabled=true; }
+    var so=document.getElementById('operaioSel'); if(so){ so.innerHTML=''; (APP_TECNICI||[]).forEach(function(n){ var o=document.createElement('option'); o.value=n; o.textContent=n; so.appendChild(o); }); }
+  }
+  function entra(code){
+    code=(''+code).replace(/\D/g,'');
+    if(code.length<4){ err('Inserisci il codice (almeno 4 cifre).'); return; }
+    btn.disabled=true; err(''); btn.textContent='Attendi…';
+    fetch(FUNC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({azione:'login',codice:code})})
+      .then(function(r){ return r.json().then(function(j){ return {st:r.status, j:j}; }); })
+      .then(function(o){
+        if(o.j && o.j.ok){
+          CODICE=code; APP_NOME=o.j.nome; APP_TECNICI=o.j.tecnici||[];
+          try{ localStorage.setItem('nds_codice', code); }catch(e){}
+          popola(); _loginRes(); gate.parentNode&&gate.parentNode.removeChild(gate);
+        } else {
+          btn.disabled=false; btn.textContent='Entra';
+          try{ localStorage.removeItem('nds_codice'); }catch(e){}
+          err((o.j&&o.j.motivo)||'Codice non valido.');
+        }
+      })
+      .catch(function(){ btn.disabled=false; btn.textContent='Entra'; err('Nessuna rete: riprova.'); });
+  }
+  btn.addEventListener('click', function(){ entra(inp.value); });
+  inp.addEventListener('keydown', function(e){ if(e.key==='Enter') entra(inp.value); });
+  var saved=''; try{ saved=localStorage.getItem('nds_codice')||''; }catch(e){}
+  if(saved){ entra(saved); } else { setTimeout(function(){ try{ inp.focus(); }catch(e){} }, 200); }
+})();
 </script>
 </body>
 </html>
