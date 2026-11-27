@@ -1082,5 +1082,48 @@ setTimeout(commLoad,1500);
   if(saved){ entra(saved); } else { setTimeout(function(){ try{ inp.focus(); }catch(e){} }, 200); }
 })();
 </script>
+<script>
+/* 27/11/2026 - Programma di domani: notifica sul telefono (iscrizione col codice personale) */
+(function(){
+  function b64u(s){ var p='===='.slice(0,(4-s.length%4)%4); var b=(s+p).replace(/-/g,'+').replace(/_/g,'/'); var r=atob(b); var a=new Uint8Array(r.length); for(var i=0;i<r.length;i++) a[i]=r.charCodeAt(i); return a; }
+  var PUSH_OK=('serviceWorker' in navigator)&&('PushManager' in window)&&('Notification' in window);
+  var TESTO_ON='✅ Notifiche attive: ogni sera dalle 18 ricevi qui il programma di domani.';
+  var TESTO_INVITO='🔔 Ricevi sul telefono il programma di domani (ogni sera dalle 18).';
+  function box(){ var w=document.getElementById('pushBox'); if(w) return w;
+    w=document.createElement('div'); w.id='pushBox';
+    w.style.cssText='margin:10px 0 14px;padding:10px 12px;border-radius:10px;background:#eef4fd;border:1px solid #c9dcf5;font-size:14px;line-height:1.35';
+    var gn=document.getElementById('grpNome');
+    if(gn&&gn.parentNode) gn.parentNode.insertBefore(w, gn.nextSibling); else document.body.insertBefore(w, document.body.firstChild);
+    return w; }
+  function stato(msg,conBottone){ var w=box(); w.innerHTML='';
+    var d=document.createElement('div'); d.id='pushMsg'; d.textContent=msg; w.appendChild(d);
+    if(conBottone){ var b=document.createElement('button'); b.id='pushBtn'; b.type='button'; b.textContent='🔔 Ricevi il programma di domani';
+      b.style.cssText='margin-top:8px;width:100%;padding:12px;border:0;border-radius:9px;background:#1d4e82;color:#fff;font-size:15px;font-weight:700';
+      b.onclick=attiva; w.appendChild(b); } }
+  function api(az,extra){ var o={azione:az,codice:CODICE}; for(var k in (extra||{})) o[k]=extra[k];
+    return fetch(FUNC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)}).then(function(r){ return r.json(); }); }
+  function attiva(){
+    if(!PUSH_OK){ stato('Questo telefono non riceve le notifiche da qui. Su iPhone apri l\'app dall\'icona sulla schermata Home (Safari → Condividi → Aggiungi alla schermata Home) e riprova.',false); return; }
+    stato('Attendi…',false);
+    Notification.requestPermission().then(function(p){
+      if(p!=='granted'){ stato('Notifiche non consentite. Consenti le notifiche per questa app nelle impostazioni del telefono e riprova.',true); return; }
+      return Promise.all([navigator.serviceWorker.ready, api('push_chiave')]).then(function(x){
+        var reg=x[0], j=x[1]; if(!j||!j.ok||!j.chiave) throw new Error('chiave');
+        return reg.pushManager.getSubscription().then(function(s){ return s || reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey:b64u(j.chiave)}); });
+      }).then(function(sub){ return api('push_iscrivi',{sub:sub.toJSON(), ua:navigator.userAgent}); })
+      .then(function(r){ if(r&&r.ok){ stato(TESTO_ON,false); } else stato('Iscrizione non riuscita: '+((r&&r.motivo)||'riprova')+'.',true); });
+    }).catch(function(){ stato('Non è stato possibile attivare le notifiche. Controlla la rete e riprova.',true); });
+  }
+  function mostra(){
+    if(!PUSH_OK){ stato('🔔 Per ricevere il programma di domani su iPhone apri l\'app dall\'icona sulla schermata Home.',false); return; }
+    if(Notification.permission!=='granted'){ stato(TESTO_INVITO,true); return; }
+    navigator.serviceWorker.ready.then(function(reg){ return reg.pushManager.getSubscription(); }).then(function(s){
+      if(s){ api('push_iscrivi',{sub:s.toJSON(), ua:navigator.userAgent}).catch(function(){}); stato(TESTO_ON,false); }
+      else stato(TESTO_INVITO,true);
+    }).catch(function(){ stato(TESTO_INVITO,true); });
+  }
+  loginReady.then(function(){ setTimeout(mostra,300); });
+})();
+</script>
 </body>
 </html>
