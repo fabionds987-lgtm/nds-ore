@@ -1,5 +1,5 @@
 /* NDS Ore — service worker: l'app si apre anche senza rete */
-var CACHE='nds-ore-v13';  /* v8: mezzo e km obbligatori · elenco cantieri che si rilegge da solo */
+var CACHE='nds-ore-v14'; /* v14: notifica del programma di domani */ //  /* v8: mezzo e km obbligatori · elenco cantieri che si rilegge da solo */
 
 self.addEventListener('install', function (e) {
   e.waitUntil(
@@ -38,4 +38,20 @@ self.addEventListener('fetch', function (e) {
       });
     })
   );
+});
+
+/* 27/11/2026 - Programma di domani: mostra la notifica e, toccandola, apre l'app */
+self.addEventListener('push', function (e) {
+  var d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (err) { d = { title: 'NDS GROUP', body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(d.title || 'Programma di domani', {
+    body: d.body || '', tag: 'programma-' + (d.giorno || ''), renotify: true, data: { giorno: d.giorno || '' }
+  }));
+});
+self.addEventListener('notificationclick', function (e) {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (l) {
+    for (var i = 0; i < l.length; i++) { if ('focus' in l[i]) return l[i].focus(); }
+    return self.clients.openWindow('./');
+  }));
 });
